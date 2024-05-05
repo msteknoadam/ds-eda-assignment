@@ -2,7 +2,7 @@
 
 **Name:** Goktug Yesilyurt
 
-**YouTube Demo link** - [The URL of the video demonstration of the app.]
+**YouTube Demo link** - [https://youtu.be/3CRMIjYUUIk](https://youtu.be/3CRMIjYUUIk)
 
 ### Phase 1
 
