@@ -115,13 +115,15 @@ export class EDAAppStack extends cdk.Stack {
 			new subs.SqsSubscription(imageProcessQueue, {
 				filterPolicyWithMessageBody: {
 					Records: sns.FilterOrPolicy.filter(
-						new sns.SubscriptionFilter({
-							eventName: [
-								{
-									prefix: "ObjectCreated:",
-								},
-							],
-						} as any)
+						new sns.SubscriptionFilter(
+							{
+								eventName: [
+									{
+										prefix: "ObjectCreated:",
+									},
+								],
+							} as any /** set as any because currently it's not supported by the aws-cdk-lib to filter by message payload's attributes */
+						)
 					),
 				},
 			})
@@ -131,13 +133,15 @@ export class EDAAppStack extends cdk.Stack {
 			new subs.LambdaSubscription(confirmationMailerFn, {
 				filterPolicyWithMessageBody: {
 					Records: sns.FilterOrPolicy.filter(
-						new sns.SubscriptionFilter({
-							eventName: [
-								{
-									prefix: "ObjectCreated:",
-								},
-							],
-						} as any)
+						new sns.SubscriptionFilter(
+							{
+								eventName: [
+									{
+										prefix: "ObjectCreated:",
+									},
+								],
+							} as any /** set as any because currently it's not supported by the aws-cdk-lib to filter by message payload's attributes */
+						)
 					),
 				},
 			})
@@ -147,13 +151,15 @@ export class EDAAppStack extends cdk.Stack {
 			new subs.LambdaSubscription(removeImageFn, {
 				filterPolicyWithMessageBody: {
 					Records: sns.FilterOrPolicy.filter(
-						new sns.SubscriptionFilter({
-							eventName: [
-								{
-									prefix: "ObjectRemoved:",
-								},
-							],
-						} as any)
+						new sns.SubscriptionFilter(
+							{
+								eventName: [
+									{
+										prefix: "ObjectRemoved:",
+									},
+								],
+							} as any /** set as any because currently it's not supported by the aws-cdk-lib to filter by message payload's attributes */
+						)
 					),
 				},
 			})
