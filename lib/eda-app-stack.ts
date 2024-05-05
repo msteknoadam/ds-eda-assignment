@@ -95,18 +95,44 @@ export class EDAAppStack extends cdk.Stack {
 		});
 
 		// Topic Subscriptions
-		const newImageTopic = new sns.Topic(this, "NewImageTopic", {
-			displayName: "New Image topic",
+		const imageTopic = new sns.Topic(this, "ImageTopic", {
+			displayName: "Image Updates Topic (create/update/delete)",
 		});
 
-		newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
-		newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
-
-		const existingImageUpdateTopic = new sns.Topic(this, "ExistingImageUpdateTopic", {
-			displayName: "Existing Image Update topic (removed or updated)",
-		});
-
-		existingImageUpdateTopic.addSubscription(
+		// New image event
+		imageTopic.addSubscription(
+			new subs.SqsSubscription(imageProcessQueue, {
+				filterPolicyWithMessageBody: {
+					Records: sns.FilterOrPolicy.filter(
+						new sns.SubscriptionFilter({
+							eventName: [
+								{
+									prefix: "ObjectCreated:",
+								},
+							],
+						} as any)
+					),
+				},
+			})
+		);
+		// New image event
+		imageTopic.addSubscription(
+			new subs.LambdaSubscription(confirmationMailerFn, {
+				filterPolicyWithMessageBody: {
+					Records: sns.FilterOrPolicy.filter(
+						new sns.SubscriptionFilter({
+							eventName: [
+								{
+									prefix: "ObjectCreated:",
+								},
+							],
+						} as any)
+					),
+				},
+			})
+		);
+		// Removed image event
+		imageTopic.addSubscription(
 			new subs.LambdaSubscription(removeImageFn, {
 				filterPolicyWithMessageBody: {
 					Records: sns.FilterOrPolicy.filter(
@@ -121,8 +147,8 @@ export class EDAAppStack extends cdk.Stack {
 				},
 			})
 		);
-
-		existingImageUpdateTopic.addSubscription(
+		// Updated image event
+		imageTopic.addSubscription(
 			new subs.LambdaSubscription(updateImageDescriptionFn, {
 				filterPolicy: {
 					comment_type: sns.SubscriptionFilter.stringFilter({
@@ -133,11 +159,8 @@ export class EDAAppStack extends cdk.Stack {
 		);
 
 		// S3 --> SQS
-		imagesBucket.addEventNotification(s3.EventType.OBJECT_CREATED, new s3n.SnsDestination(newImageTopic));
-		imagesBucket.addEventNotification(
-			s3.EventType.OBJECT_REMOVED,
-			new s3n.SnsDestination(existingImageUpdateTopic)
-		);
+		imagesBucket.addEventNotification(s3.EventType.OBJECT_CREATED, new s3n.SnsDestination(imageTopic));
+		imagesBucket.addEventNotification(s3.EventType.OBJECT_REMOVED, new s3n.SnsDestination(imageTopic));
 
 		// SQS --> Lambda
 		const newImageEventSource = new events.SqsEventSource(imageProcessQueue, {
@@ -180,8 +203,8 @@ export class EDAAppStack extends cdk.Stack {
 		new cdk.CfnOutput(this, "bucketName", {
 			value: imagesBucket.bucketName,
 		});
-		new cdk.CfnOutput(this, "existingImageUpdateTopicARN", {
-			value: existingImageUpdateTopic.topicArn,
+		new cdk.CfnOutput(this, "imageTopicARN", {
+			value: imageTopic.topicArn,
 		});
 	}
 }
