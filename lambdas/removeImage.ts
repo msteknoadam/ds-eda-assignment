@@ -1,6 +1,7 @@
 import { SQSHandler } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DeleteCommand, DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { ALLOWED_FILE_EXTENSIONS } from "shared/constants";
 
 const ddbDocClient = createDDbDocClient();
 
@@ -17,8 +18,14 @@ export const handler: SQSHandler = async (event: any) => {
 				// Object key may have spaces or unicode non-ASCII characters.
 				const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
 
+				const fileExtension = srcKey.split(".").pop() || "";
+				if (!ALLOWED_FILE_EXTENSIONS.includes(fileExtension)) {
+					// No need to try to delete the image if it's not supported, since those won't be in the table anyways
+					throw new Error(`File extension ${fileExtension} is not supported.`);
+				}
+
 				try {
-					// Delete the image ......
+					// Delete the image
 					const commandOutput = await ddbDocClient.send(
 						new DeleteCommand({
 							TableName: process.env.TABLE_NAME,

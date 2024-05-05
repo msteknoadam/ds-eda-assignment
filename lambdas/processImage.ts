@@ -1,13 +1,9 @@
-/* eslint-disable import/extensions, import/no-absolute-path */
 import { SQSHandler } from "aws-lambda";
-import { GetObjectCommand, GetObjectCommandInput, S3Client } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { ALLOWED_FILE_EXTENSIONS } from "shared/constants";
 
-const s3 = new S3Client();
 const ddbDocClient = createDDbDocClient();
-
-const ALLOWED_FILE_EXTENSIONS = ["jpeg", "png"];
 
 export const handler: SQSHandler = async (event) => {
 	console.log("Event ", JSON.stringify(event));
@@ -19,7 +15,6 @@ export const handler: SQSHandler = async (event) => {
 			console.log("Record body ", JSON.stringify(snsMessage));
 			for (const messageRecord of snsMessage.Records) {
 				const s3e = messageRecord.s3;
-				const srcBucket = s3e.bucket.name;
 				// Object key may have spaces or unicode non-ASCII characters.
 				const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
 
@@ -28,15 +23,8 @@ export const handler: SQSHandler = async (event) => {
 					throw new Error(`File extension ${fileExtension} is not supported.`);
 				}
 
-				let origimage = null;
 				try {
-					// Download the image from the S3 source bucket.
-					const params: GetObjectCommandInput = {
-						Bucket: srcBucket,
-						Key: srcKey,
-					};
-					origimage = await s3.send(new GetObjectCommand(params));
-					// Process the image ......
+					// Process the image
 					const commandOutput = await ddbDocClient.send(
 						new PutCommand({
 							TableName: process.env.TABLE_NAME,
