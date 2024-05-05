@@ -8,6 +8,7 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 
 import { Construct } from "constructs";
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -16,25 +17,36 @@ export class EDAAppStack extends cdk.Stack {
 	constructor(scope: Construct, id: string, props?: cdk.StackProps) {
 		super(scope, id, props);
 
+		// Buckets
 		const imagesBucket = new s3.Bucket(this, "images", {
 			removalPolicy: cdk.RemovalPolicy.DESTROY,
 			autoDeleteObjects: true,
 			publicReadAccess: false,
 		});
 
-		// Integration infrastructure
+		// Tables
+		const imagesTable = new dynamodb.Table(this, "ImagesTable", {
+			billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+			partitionKey: { name: "imageName", type: dynamodb.AttributeType.STRING },
+			removalPolicy: cdk.RemovalPolicy.DESTROY,
+			tableName: "Images",
+		});
 
+		// Integration infrastructure
 		const imageProcessQueue = new sqs.Queue(this, "img-created-queue", {
 			receiveMessageWaitTime: cdk.Duration.seconds(10),
 		});
 
 		// Lambda functions
-
 		const processImageFn = new lambdanode.NodejsFunction(this, "ProcessImageFn", {
 			runtime: lambda.Runtime.NODEJS_18_X,
 			entry: `${__dirname}/../lambdas/processImage.ts`,
 			timeout: cdk.Duration.seconds(15),
 			memorySize: 128,
+			environment: {
+				TABLE_NAME: imagesTable.tableName,
+				REGION: "eu-west-1",
+			},
 		});
 
 		const confirmationMailerFn = new lambdanode.NodejsFunction(this, "mailer-function", {
@@ -45,7 +57,6 @@ export class EDAAppStack extends cdk.Stack {
 		});
 
 		// Topic Subscriptions
-
 		const newImageTopic = new sns.Topic(this, "NewImageTopic", {
 			displayName: "New Image topic",
 		});
@@ -65,8 +76,8 @@ export class EDAAppStack extends cdk.Stack {
 		processImageFn.addEventSource(newImageEventSource);
 
 		// Permissions
-
 		imagesBucket.grantRead(processImageFn);
+		imagesTable.grantReadWriteData(processImageFn);
 
 		confirmationMailerFn.addToRolePolicy(
 			new iam.PolicyStatement({
@@ -77,7 +88,6 @@ export class EDAAppStack extends cdk.Stack {
 		);
 
 		// Output
-
 		new cdk.CfnOutput(this, "bucketName", {
 			value: imagesBucket.bucketName,
 		});

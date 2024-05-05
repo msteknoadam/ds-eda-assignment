@@ -1,14 +1,11 @@
 /* eslint-disable import/extensions, import/no-absolute-path */
 import { SQSHandler } from "aws-lambda";
-import {
-	GetObjectCommand,
-	PutObjectCommandInput,
-	GetObjectCommandInput,
-	S3Client,
-	PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import { GetObjectCommand, GetObjectCommandInput, S3Client } from "@aws-sdk/client-s3";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 
 const s3 = new S3Client();
+const ddbDocClient = createDDbDocClient();
 
 export const handler: SQSHandler = async (event) => {
 	console.log("Event ", JSON.stringify(event));
@@ -32,6 +29,12 @@ export const handler: SQSHandler = async (event) => {
 					};
 					origimage = await s3.send(new GetObjectCommand(params));
 					// Process the image ......
+					const commandOutput = await ddbDocClient.send(
+						new PutCommand({
+							TableName: process.env.TABLE_NAME,
+							Item: { imageName: srcKey },
+						})
+					);
 				} catch (error) {
 					console.log(error);
 				}
@@ -39,3 +42,17 @@ export const handler: SQSHandler = async (event) => {
 		}
 	}
 };
+
+function createDDbDocClient() {
+	const ddbClient = new DynamoDBClient({ region: process.env.REGION });
+	const marshallOptions = {
+		convertEmptyValues: true,
+		removeUndefinedValues: true,
+		convertClassInstanceToMap: true,
+	};
+	const unmarshallOptions = {
+		wrapNumbers: false,
+	};
+	const translateConfig = { marshallOptions, unmarshallOptions };
+	return DynamoDBDocumentClient.from(ddbClient, translateConfig);
+}
