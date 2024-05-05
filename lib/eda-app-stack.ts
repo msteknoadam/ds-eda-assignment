@@ -9,10 +9,8 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
-
 import { Construct } from "constructs";
 import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
-// import * as sqs from 'aws-cdk-lib/aws-sqs';
 
 export class EDAAppStack extends cdk.Stack {
 	constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -59,6 +57,17 @@ export class EDAAppStack extends cdk.Stack {
 			},
 		});
 
+		const removeImageFn = new lambdanode.NodejsFunction(this, "RemoveImageFn", {
+			runtime: lambda.Runtime.NODEJS_16_X,
+			entry: `${__dirname}/../lambdas/removeImage.ts`,
+			timeout: cdk.Duration.seconds(15),
+			memorySize: 128,
+			environment: {
+				TABLE_NAME: imagesTable.tableName,
+				REGION: "eu-west-1",
+			},
+		});
+
 		const updateImageDescriptionFn = new lambdanode.NodejsFunction(this, "UpdateImageDescriptionFn", {
 			runtime: lambda.Runtime.NODEJS_16_X,
 			entry: `${__dirname}/../lambdas/updateImageDescription.ts`,
@@ -85,14 +94,6 @@ export class EDAAppStack extends cdk.Stack {
 			memorySize: 128,
 		});
 
-		// General SNS message subscriber for debugging for now
-		const processSNSMessageFn = new lambdanode.NodejsFunction(this, "processSNSMsgFn", {
-			runtime: lambda.Runtime.NODEJS_16_X,
-			memorySize: 128,
-			timeout: cdk.Duration.seconds(3),
-			entry: `${__dirname}/../lambdas/processSNSMsg.ts`,
-		});
-
 		// Topic Subscriptions
 		const newImageTopic = new sns.Topic(this, "NewImageTopic", {
 			displayName: "New Image topic",
@@ -105,8 +106,21 @@ export class EDAAppStack extends cdk.Stack {
 			displayName: "Existing Image Update topic (removed or updated)",
 		});
 
-		// General SNS message subscriber for debugging for now
-		existingImageUpdateTopic.addSubscription(new subs.LambdaSubscription(processSNSMessageFn));
+		existingImageUpdateTopic.addSubscription(
+			new subs.LambdaSubscription(removeImageFn, {
+				filterPolicyWithMessageBody: {
+					Records: sns.FilterOrPolicy.filter(
+						new sns.SubscriptionFilter({
+							eventName: [
+								{
+									prefix: "ObjectRemoved:",
+								},
+							],
+						} as any)
+					),
+				},
+			})
+		);
 
 		existingImageUpdateTopic.addSubscription(
 			new subs.LambdaSubscription(updateImageDescriptionFn, {
@@ -120,6 +134,10 @@ export class EDAAppStack extends cdk.Stack {
 
 		// S3 --> SQS
 		imagesBucket.addEventNotification(s3.EventType.OBJECT_CREATED, new s3n.SnsDestination(newImageTopic));
+		imagesBucket.addEventNotification(
+			s3.EventType.OBJECT_REMOVED,
+			new s3n.SnsDestination(existingImageUpdateTopic)
+		);
 
 		// SQS --> Lambda
 		const newImageEventSource = new events.SqsEventSource(imageProcessQueue, {
@@ -139,6 +157,7 @@ export class EDAAppStack extends cdk.Stack {
 		// Permissions
 		imagesBucket.grantRead(processImageFn);
 		imagesTable.grantReadWriteData(processImageFn);
+		imagesTable.grantReadWriteData(removeImageFn);
 		imagesTable.grantReadWriteData(updateImageDescriptionFn);
 
 		confirmationMailerFn.addToRolePolicy(
