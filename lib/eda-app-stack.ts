@@ -59,6 +59,17 @@ export class EDAAppStack extends cdk.Stack {
 			},
 		});
 
+		const updateImageDescriptionFn = new lambdanode.NodejsFunction(this, "UpdateImageDescriptionFn", {
+			runtime: lambda.Runtime.NODEJS_16_X,
+			entry: `${__dirname}/../lambdas/updateImageDescription.ts`,
+			timeout: cdk.Duration.seconds(15),
+			memorySize: 128,
+			environment: {
+				TABLE_NAME: imagesTable.tableName,
+				REGION: "eu-west-1",
+			},
+		});
+
 		const confirmationMailerFn = new lambdanode.NodejsFunction(this, "ConfirmationMailerFn", {
 			runtime: lambda.Runtime.NODEJS_16_X,
 			memorySize: 1024,
@@ -74,6 +85,14 @@ export class EDAAppStack extends cdk.Stack {
 			memorySize: 128,
 		});
 
+		// General SNS message subscriber for debugging for now
+		const processSNSMessageFn = new lambdanode.NodejsFunction(this, "processSNSMsgFn", {
+			runtime: lambda.Runtime.NODEJS_16_X,
+			memorySize: 128,
+			timeout: cdk.Duration.seconds(3),
+			entry: `${__dirname}/../lambdas/processSNSMsg.ts`,
+		});
+
 		// Topic Subscriptions
 		const newImageTopic = new sns.Topic(this, "NewImageTopic", {
 			displayName: "New Image topic",
@@ -81,6 +100,23 @@ export class EDAAppStack extends cdk.Stack {
 
 		newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
 		newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
+
+		const existingImageUpdateTopic = new sns.Topic(this, "ExistingImageUpdateTopic", {
+			displayName: "Existing Image Update topic (removed or updated)",
+		});
+
+		// General SNS message subscriber for debugging for now
+		existingImageUpdateTopic.addSubscription(new subs.LambdaSubscription(processSNSMessageFn));
+
+		existingImageUpdateTopic.addSubscription(
+			new subs.LambdaSubscription(updateImageDescriptionFn, {
+				filterPolicy: {
+					comment_type: sns.SubscriptionFilter.stringFilter({
+						allowlist: ["Caption"],
+					}),
+				},
+			})
+		);
 
 		// S3 --> SQS
 		imagesBucket.addEventNotification(s3.EventType.OBJECT_CREATED, new s3n.SnsDestination(newImageTopic));
@@ -103,6 +139,7 @@ export class EDAAppStack extends cdk.Stack {
 		// Permissions
 		imagesBucket.grantRead(processImageFn);
 		imagesTable.grantReadWriteData(processImageFn);
+		imagesTable.grantReadWriteData(updateImageDescriptionFn);
 
 		confirmationMailerFn.addToRolePolicy(
 			new iam.PolicyStatement({
@@ -123,6 +160,9 @@ export class EDAAppStack extends cdk.Stack {
 		// Output
 		new cdk.CfnOutput(this, "bucketName", {
 			value: imagesBucket.bucketName,
+		});
+		new cdk.CfnOutput(this, "existingImageUpdateTopicARN", {
+			value: existingImageUpdateTopic.topicArn,
 		});
 	}
 }
