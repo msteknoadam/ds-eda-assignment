@@ -7,6 +7,8 @@ import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 const s3 = new S3Client();
 const ddbDocClient = createDDbDocClient();
 
+const ALLOWED_FILE_EXTENSIONS = ["jpeg", "png"];
+
 export const handler: SQSHandler = async (event) => {
 	console.log("Event ", JSON.stringify(event));
 	for (const record of event.Records) {
@@ -20,6 +22,12 @@ export const handler: SQSHandler = async (event) => {
 				const srcBucket = s3e.bucket.name;
 				// Object key may have spaces or unicode non-ASCII characters.
 				const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
+
+				const fileExtension = srcKey.split(".").pop() || "";
+				if (!ALLOWED_FILE_EXTENSIONS.includes(fileExtension)) {
+					throw new Error(`File extension ${fileExtension} is not supported.`);
+				}
+
 				let origimage = null;
 				try {
 					// Download the image from the S3 source bucket.

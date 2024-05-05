@@ -11,6 +11,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 
 import { Construct } from "constructs";
+import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
 
 export class EDAAppStack extends cdk.Stack {
@@ -33,8 +34,17 @@ export class EDAAppStack extends cdk.Stack {
 		});
 
 		// Integration infrastructure
+		const failedImagesQueue = new sqs.Queue(this, "failed-images-queue", {
+			retentionPeriod: cdk.Duration.minutes(30),
+		});
+
 		const imageProcessQueue = new sqs.Queue(this, "img-created-queue", {
 			receiveMessageWaitTime: cdk.Duration.seconds(10),
+			deadLetterQueue: {
+				queue: failedImagesQueue,
+				// # of rejections by consumer (lambda function)
+				maxReceiveCount: 1,
+			},
 		});
 
 		// Lambda functions
@@ -49,11 +59,19 @@ export class EDAAppStack extends cdk.Stack {
 			},
 		});
 
-		const confirmationMailerFn = new lambdanode.NodejsFunction(this, "mailer-function", {
+		const confirmationMailerFn = new lambdanode.NodejsFunction(this, "ConfirmationMailerFn", {
 			runtime: lambda.Runtime.NODEJS_16_X,
 			memorySize: 1024,
 			timeout: cdk.Duration.seconds(3),
-			entry: `${__dirname}/../lambdas/mailer.ts`,
+			entry: `${__dirname}/../lambdas/confirmationMailer.ts`,
+		});
+
+		const rejectionMailerFn = new lambdanode.NodejsFunction(this, "RejectionMailerFn", {
+			architecture: lambda.Architecture.ARM_64,
+			runtime: lambda.Runtime.NODEJS_16_X,
+			entry: `${__dirname}/../lambdas/rejectionMailer.ts`,
+			timeout: cdk.Duration.seconds(10),
+			memorySize: 128,
 		});
 
 		// Topic Subscriptions
@@ -75,11 +93,26 @@ export class EDAAppStack extends cdk.Stack {
 
 		processImageFn.addEventSource(newImageEventSource);
 
+		rejectionMailerFn.addEventSource(
+			new SqsEventSource(failedImagesQueue, {
+				maxBatchingWindow: cdk.Duration.seconds(5),
+				maxConcurrency: 2,
+			})
+		);
+
 		// Permissions
 		imagesBucket.grantRead(processImageFn);
 		imagesTable.grantReadWriteData(processImageFn);
 
 		confirmationMailerFn.addToRolePolicy(
+			new iam.PolicyStatement({
+				effect: iam.Effect.ALLOW,
+				actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendTemplatedEmail"],
+				resources: ["*"],
+			})
+		);
+
+		rejectionMailerFn.addToRolePolicy(
 			new iam.PolicyStatement({
 				effect: iam.Effect.ALLOW,
 				actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendTemplatedEmail"],
