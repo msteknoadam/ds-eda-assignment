@@ -11,6 +11,9 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { Construct } from "constructs";
 import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import { StreamViewType } from "aws-cdk-lib/aws-dynamodb";
+import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import { StartingPosition } from "aws-cdk-lib/aws-lambda";
 
 export class EDAAppStack extends cdk.Stack {
 	constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -29,6 +32,7 @@ export class EDAAppStack extends cdk.Stack {
 			partitionKey: { name: "imageName", type: dynamodb.AttributeType.STRING },
 			removalPolicy: cdk.RemovalPolicy.DESTROY,
 			tableName: "Images",
+			stream: StreamViewType.OLD_IMAGE,
 		});
 
 		// Integration infrastructure
@@ -91,6 +95,13 @@ export class EDAAppStack extends cdk.Stack {
 			runtime: lambda.Runtime.NODEJS_16_X,
 			entry: `${__dirname}/../lambdas/rejectionMailer.ts`,
 			timeout: cdk.Duration.seconds(10),
+			memorySize: 128,
+		});
+
+		const deleteMailerFn = new lambdanode.NodejsFunction(this, "DeleteMailerFn", {
+			runtime: lambda.Runtime.NODEJS_16_X,
+			entry: `${__dirname}/../lambdas/deleteMailer.ts`,
+			timeout: cdk.Duration.seconds(15),
 			memorySize: 128,
 		});
 
@@ -158,6 +169,16 @@ export class EDAAppStack extends cdk.Stack {
 			})
 		);
 
+		// DynamoDB --> Lambda
+		deleteMailerFn.addEventSource(
+			new DynamoEventSource(imagesTable, {
+				startingPosition: StartingPosition.TRIM_HORIZON,
+				batchSize: 1,
+				bisectBatchOnError: true,
+				retryAttempts: 2,
+			})
+		);
+
 		// S3 --> SQS
 		imagesBucket.addEventNotification(s3.EventType.OBJECT_CREATED, new s3n.SnsDestination(imageTopic));
 		imagesBucket.addEventNotification(s3.EventType.OBJECT_REMOVED, new s3n.SnsDestination(imageTopic));
@@ -192,6 +213,14 @@ export class EDAAppStack extends cdk.Stack {
 		);
 
 		rejectionMailerFn.addToRolePolicy(
+			new iam.PolicyStatement({
+				effect: iam.Effect.ALLOW,
+				actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendTemplatedEmail"],
+				resources: ["*"],
+			})
+		);
+
+		deleteMailerFn.addToRolePolicy(
 			new iam.PolicyStatement({
 				effect: iam.Effect.ALLOW,
 				actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendTemplatedEmail"],
