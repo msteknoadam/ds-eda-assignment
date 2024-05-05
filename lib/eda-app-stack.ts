@@ -185,7 +185,7 @@ export class EDAAppStack extends cdk.Stack {
 			})
 		);
 
-		// S3 --> SQS
+		// S3 --> SNS
 		imagesBucket.addEventNotification(s3.EventType.OBJECT_CREATED, new s3n.SnsDestination(imageTopic));
 		imagesBucket.addEventNotification(s3.EventType.OBJECT_REMOVED, new s3n.SnsDestination(imageTopic));
 
