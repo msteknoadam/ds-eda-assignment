@@ -4,6 +4,10 @@ import { sendEmail } from "/opt/mailUtils";
 export const handler: DynamoDBStreamHandler = async (event) => {
 	console.log("Event ", JSON.stringify(event));
 	for (const record of event.Records) {
+		if (record.eventName !== "REMOVE") {
+			continue;
+		}
+
 		const deletedImageName = record.dynamodb?.OldImage?.imageName?.S;
 
 		if (deletedImageName) {
