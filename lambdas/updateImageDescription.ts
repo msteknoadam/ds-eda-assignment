@@ -1,6 +1,7 @@
 import { SQSHandler } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { ALLOWED_FILE_EXTENSIONS } from "shared/constants";
 
 const ddbDocClient = createDDbDocClient();
 
@@ -13,6 +14,11 @@ export const handler: SQSHandler = async (event: any) => {
 		console.log("Message body ", JSON.stringify(snsMessage));
 		// Sent image name might have spaces
 		const imageName = snsMessage.name.trim();
+
+		const fileExtension = imageName.split(".").pop() || "";
+		if (!ALLOWED_FILE_EXTENSIONS.includes(fileExtension)) {
+			throw new Error(`File extension ${fileExtension} is not supported.`);
+		}
 
 		const foundImageRow = await ddbDocClient.send(
 			new GetCommand({

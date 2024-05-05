@@ -1,5 +1,5 @@
 import { SQSHandler } from "aws-lambda";
-import { sendEmail } from "/opt/mailUtils";
+import { sendEmail } from "shared/mailUtils";
 
 export const handler: SQSHandler = async (event: any) => {
 	console.log("Event ", JSON.stringify(event));

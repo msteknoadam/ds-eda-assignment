@@ -1,5 +1,5 @@
 import type { DynamoDBStreamHandler } from "aws-lambda";
-import { sendEmail } from "/opt/mailUtils";
+import { sendEmail } from "shared/mailUtils";
 
 export const handler: DynamoDBStreamHandler = async (event) => {
 	console.log("Event ", JSON.stringify(event));
